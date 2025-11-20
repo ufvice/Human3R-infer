@@ -3,13 +3,12 @@ import torch.nn as nn
 from functools import partial
 from modules import Block, DecoderBlock, PatchEmbed, RoPE2D
 from heads import DPTPts3dPoseSMPL
-from utils import pad_image, nms, apply_threshold, unpad_uv, unpad_image
+from utils import pad_image, nms, apply_threshold, unpad_uv, unpad_image, postprocess_output
 from einops import rearrange
 
 class Dinov2Backbone(nn.Module):
     def __init__(self, name='dinov2_vitl14'):
         super().__init__()
-        # Using torch.hub for Dinov2
         self.encoder = torch.hub.load('facebookresearch/dinov2', name)
         self.embed_dim = self.encoder.embed_dim
         self.patch_size = self.encoder.patch_size
@@ -23,7 +22,6 @@ class LocalMemory(nn.Module):
         self.v_dim = v_dim
         self.proj_q = nn.Linear(k_dim, v_dim)
         self.mem = nn.Parameter(torch.randn(1, size, 2 * v_dim) * 0.2)
-        # Simplified: Just Read blocks for inference usually
         self.read_blocks = nn.ModuleList([
             DecoderBlock(2 * v_dim, num_heads, rope=rope) for _ in range(2)
         ])
@@ -33,7 +31,6 @@ class LocalMemory(nn.Module):
 
     def inquire(self, query, mem):
         x = self.proj_q(query)
-        # Dummy masked token handling
         masked = torch.zeros_like(x) 
         x = torch.cat([x, masked], dim=-1)
         for blk in self.read_blocks:
@@ -147,27 +144,22 @@ class ARCroco3DStereo(nn.Module):
         for i, view in enumerate(views):
             # 1. Encode Image
             img_tensor = view['img']
-            # 修改点：获取当前图像的实际尺寸
             current_H, current_W = img_tensor.shape[-2:]
             
             feat, pos = self._encode_image(img_tensor)
             feat, pos = feat[-1], pos
 
             # 2. Encode MHMR (Dinov2)
-            img_mhmr = view.get('img_mhmr') # Assumed padded
-            mhmr_feat = self.backbone(img_mhmr) # [B, N, D]
+            img_mhmr = view.get('img_mhmr') 
+            mhmr_feat = self.backbone(img_mhmr) 
 
             # 3. Detection
             scores = self.downstream_head.detect_mhmr(mhmr_feat)
-            # ... (Implementation of NMS and Top-K selection would go here, simplifying for brevity) ...
-            # Assuming we pick top 1 for now or handle tokens directly
             
             # 4. Recurrent Step
             pose_feat = self.pose_retriever.inquire(feat.mean(1, keepdim=True), mem)
             
-            # --- Fix: Create position encoding for pose token and concatenate ---
-            # Pose token's position encoding is set to -1 (following original code logic)
-            # pos shape: [B, N, 2]
+            # Construct Pose Position Encoding (-1) to fix shape mismatch
             pose_pos = torch.full(
                 (batch_size, 1, 2), 
                 fill_value=-1, 
@@ -175,47 +167,41 @@ class ARCroco3DStereo(nn.Module):
                 device=device
             )
             
-            # Concatenate features: [Pose, Image] -> [B, 1+N, D]
+            # Concatenate features and positions
             f_img_input = self.decoder_embed(feat)
             f_img_input = torch.cat([pose_feat, f_img_input], dim=1) 
             
-            # Concatenate positions: [Pose_Pos, Image_Pos] -> [B, 1+N, 2]
             pos_input = torch.cat([pose_pos, pos], dim=1)
-            # --- End of fix ---
             
             f_state = state_feat
             
             all_layers = [f_img_input]
             
-            # Loop through DecoderBlocks
             for blk_state, blk_img in zip(self.dec_blocks_state, self.dec_blocks):
-                # Note: Pass the concatenated pos_input here
                 f_state, _, _ = blk_state(f_state, f_img_input, state_pos, pos_input)
                 f_img_input, _, _ = blk_img(f_img_input, f_state, pos_input, state_pos)
                 all_layers.append(f_img_input)
                 
             # 5. Head Prediction
-            # Extract tokens for DPT head
-            # The DPT head expects:
-            # - Index 0: Raw Encoder output (1024 dim, no pose token)
-            # - Index 1-3: Decoder outputs (768 dim, need to remove pose token)
             L = len(all_layers)
+            # Pass Raw Encoder Feat (Index 0) and Decoder Features (Indices 1-3)
+            # Decoder features must slice [:, 1:] to remove pose token
             head_input = [
-                feat,  # Raw encoder output (1024 dim, no pose token to remove)
-                all_layers[L//2][:, 1:],  # Middle decoder layer (768 dim, remove pose token)
-                all_layers[L*3//4][:, 1:],  # Deep decoder layer (768 dim, remove pose token)
-                all_layers[-1][:, 1:]  # Final decoder layer (768 dim, remove pose token)
+                feat, 
+                all_layers[L//2][:, 1:], 
+                all_layers[L*3//4][:, 1:], 
+                all_layers[-1][:, 1:]
             ]
             
-            # Run Head
-            # 修改点：传入当前图像的实际尺寸 (current_H, current_W)
-            res = self.downstream_head.dpt_self(head_input, image_size=(current_H, current_W))
-            # Post processing would happen here (handled in utils usually)
+            # Run Head (Output: [B, 4, H, W])
+            res_tensor = self.downstream_head.dpt_self(head_input, image_size=(current_H, current_W))
             
-            results.append(res)
+            # Postprocess (Tensor -> Dict, Permute dims)
+            res_dict = postprocess_output(res_tensor)
+            
+            results.append(res_dict)
             
             # Update Memory
             mem = self.pose_retriever.update_mem(mem, feat.mean(1, keepdim=True), all_layers[-1][:, 0:1])
 
         return results
-

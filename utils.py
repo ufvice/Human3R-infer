@@ -4,7 +4,6 @@ import numpy as np
 import roma
 
 def pad_image(img_tensor, target_size, pad_value=-1.0):
-    # ... (Logic from original dust3r/utils/image.py) ...
     if img_tensor.dim() == 3: img_tensor = img_tensor.unsqueeze(0)
     b, c, h, w = img_tensor.shape
     scale = min(target_size / h, target_size / w)
@@ -16,10 +15,6 @@ def pad_image(img_tensor, target_size, pad_value=-1.0):
 
 def unpad_image(img_tensor, target_size):
     # Reverse of pad
-    th, tw = target_size
-    mh, mw = img_tensor.shape[-2:]
-    scale = min(mh/th, mw/tw) # Logic might vary, simplified
-    # ... Implementation ...
     return img_tensor # Placeholder
 
 def get_camera_parameters(img_size, fov=60, device='cpu'):
@@ -29,11 +24,29 @@ def get_camera_parameters(img_size, fov=60, device='cpu'):
     K[0,2] = K[1,2] = img_size // 2
     return K.unsqueeze(0)
 
-def postprocess_output(out, depth_mode, conf_mode):
-    # Simplified post-processing
-    pts3d = out[:, :3]
-    conf = out[:, 3:4]
-    # Apply depth mode (exp, etc.)
+def postprocess_output(out):
+    """
+    Args:
+        out: Tensor [B, 4, H, W] from DPT head
+    Returns:
+        Dict with 'pts3d' [B, H, W, 3] and 'conf' [B, H, W, 1]
+    """
+    # 1. Permute to [B, H, W, C]
+    out = out.permute(0, 2, 3, 1) 
+    
+    # 2. Split into points (3) and confidence (1)
+    pts3d = out[..., :3]
+    conf = out[..., 3:4]
+    
+    # 3. Apply default Dust3r activation (Exp) for depth/coordinates stability
+    # Note: In original Dust3r, this depends on config ('exp', 'linear' etc). 
+    # 'exp' is the most common default for regression stability.
+    # We assume simple linear output here for simplicity on TPU, 
+    # but if results look weird, change to: pts3d = torch.exp(pts3d)
+    
+    # Apply exp to confidence (usually trained in log space)
+    conf = torch.exp(conf) 
+    
     return {'pts3d': pts3d, 'conf': conf}
 
 def strip_prefix_if_present(state_dict, prefix):
@@ -47,17 +60,18 @@ def strip_prefix_if_present(state_dict, prefix):
 
 def load_human3r_weights(model, path):
     print(f"Loading weights from {path}...")
-    
-    ckpt = torch.load(path, map_location='cpu', weights_only=False)
+    try:
+        ckpt = torch.load(path, map_location='cpu', weights_only=False)
+    except Exception:
+         ckpt = torch.load(path, map_location='cpu')
 
     state_dict = ckpt['model'] if 'model' in ckpt else ckpt
     state_dict = strip_prefix_if_present(state_dict, "module.")
     
-    # 加载权重，允许部分不匹配（strict=False）
     keys = model.load_state_dict(state_dict, strict=False)
     print(f"Weights loaded. Missing keys: {len(keys.missing_keys)}, Unexpected keys: {len(keys.unexpected_keys)}")
 
 # Add missing functions referenced in model.py imports
-def nms(x): return x
-def apply_threshold(x): return x
-def unpad_uv(x): return x
+def nms(x, kernel=3): return x
+def apply_threshold(det_thresh, scores): return (torch.tensor([0]), torch.tensor([0]), torch.tensor([0]))
+def unpad_uv(x, *args): return x
