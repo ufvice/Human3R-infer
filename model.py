@@ -146,7 +146,11 @@ class ARCroco3DStereo(nn.Module):
         
         for i, view in enumerate(views):
             # 1. Encode Image
-            feat, pos = self._encode_image(view['img'])
+            img_tensor = view['img']
+            # 修改点：获取当前图像的实际尺寸
+            current_H, current_W = img_tensor.shape[-2:]
+            
+            feat, pos = self._encode_image(img_tensor)
             feat, pos = feat[-1], pos
 
             # 2. Encode MHMR (Dinov2)
@@ -185,7 +189,8 @@ class ARCroco3DStereo(nn.Module):
             head_input = [h[:, 1:] for h in head_input]
             
             # Run Head
-            res = self.downstream_head.dpt_self(head_input, image_size=(self.img_size, self.img_size))
+            # 修改点：传入当前图像的实际尺寸 (current_H, current_W)
+            res = self.downstream_head.dpt_self(head_input, image_size=(current_H, current_W))
             # Post processing would happen here (handled in utils usually)
             
             results.append(res)
@@ -194,3 +199,4 @@ class ARCroco3DStereo(nn.Module):
             mem = self.pose_retriever.update_mem(mem, feat.mean(1, keepdim=True), all_layers[-1][:, 0:1])
 
         return results
+

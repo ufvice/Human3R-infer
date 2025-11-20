@@ -177,16 +177,23 @@ class PatchEmbed(nn.Module):
         self.cache_positions = {}
 
     def get_pos(self, b, h, w, device):
-        if not (h, w) in self.cache_positions:
+        # 修改点：使用 (h, w) 元组作为缓存键，支持非正方形
+        if (h, w) not in self.cache_positions:
             x = torch.arange(w, device=device)
             y = torch.arange(h, device=device)
-            self.cache_positions[h, w] = torch.cartesian_prod(y, x)
-        return self.cache_positions[h, w].view(1, h * w, 2).expand(b, -1, 2).clone()
+            self.cache_positions[(h, w)] = torch.cartesian_prod(y, x)
+        
+        return self.cache_positions[(h, w)].view(1, h * w, 2).expand(b, -1, 2).clone()
 
     def forward(self, x, **kw):
         B, C, H, W = x.shape
-        x = self.proj(x).flatten(2).transpose(1, 2)
-        pos = self.get_pos(B, x.size(1), int(x.size(1)**0.5), x.device) # Simplified
+        # 修改点：先进行投影
+        x = self.proj(x)
+        # 修改点：直接获取特征图的真实高度和宽度
+        Hp, Wp = x.shape[2], x.shape[3]
+        x = x.flatten(2).transpose(1, 2)
+        # 修改点：传入真实的高宽，而不是靠猜
+        pos = self.get_pos(B, Hp, Wp, x.device)
         return self.norm(x), pos
 
 class ModLN(nn.Module):

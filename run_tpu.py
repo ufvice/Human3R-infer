@@ -32,10 +32,17 @@ def main():
     # 3. Prep Data
     print(f"Loading {args.input_image}...")
     img = Image.open(args.input_image).convert("RGB")
-    # Resize logic should match original (longest edge 512)
+    
+    # 修改点：确保长宽都是 16 的倍数
     W, H = img.size
     scale = 512 / max(W, H)
-    new_W, new_H = int(W * scale), int(H * scale)
+    new_W = int(W * scale)
+    new_H = int(H * scale)
+    # Round to nearest multiple of 16
+    new_W = round(new_W / 16) * 16
+    new_H = round(new_H / 16) * 16
+    print(f"Resizing image to {new_W}x{new_H}")
+    
     img = img.resize((new_W, new_H))
     
     transform = Compose([ToTensor(), Normalize((0.5,0.5,0.5), (0.5,0.5,0.5))])
