@@ -63,9 +63,13 @@ def main():
         # Note: Autocast removed for TPU
         results = model.forward_recurrent(views)
     
+    # TPU Optimization: Explicit synchronization point
+    # This tells XLA to compile the entire inference as one graph
+    xm.mark_step()
+    
     # 5. Save
     print(f"Saving to {args.output_path}...")
-    # Move to CPU before saving
+    # Move to CPU after XLA graph execution
     cpu_results = [ {k: v.cpu() for k, v in res.items() if isinstance(v, torch.Tensor)} for res in results]
     torch.save(cpu_results, args.output_path)
     print("Done.")

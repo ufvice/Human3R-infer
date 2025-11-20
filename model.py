@@ -63,7 +63,7 @@ class ARCroco3DStereo(nn.Module):
         self.pose_mode = ('exp', -float('inf'), float('inf'))
 
         # Components
-        self.rope = RoPE2D(freq=100.0)
+        self.rope = RoPE2D(freq=100.0, max_seq_len=5000)  # TPU-friendly: pre-allocate position encodings
         self.patch_embed = PatchEmbed(img_size, patch_size, 3, enc_embed_dim)
         self.patch_embed_ray_map = PatchEmbed(img_size, patch_size, 6, enc_embed_dim)
         

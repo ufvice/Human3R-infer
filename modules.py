@@ -42,9 +42,10 @@ class Mlp(nn.Module):
 
 # --- RoPE (Python Implementation for TPU) ---
 class RoPE2D(torch.nn.Module):
-    def __init__(self, freq=100.0):
+    def __init__(self, freq=100.0, max_seq_len=5000):
         super().__init__()
         self.base = freq
+        self.max_seq_len = max_seq_len  # Pre-define max length to avoid .max() sync
         self.cache = {}
 
     def get_cos_sin(self, D, seq_len, device, dtype):
@@ -71,7 +72,8 @@ class RoPE2D(torch.nn.Module):
     def forward(self, tokens, positions):
         # positions: [B, N, 2]
         D = tokens.size(3) // 2
-        cos, sin = self.get_cos_sin(D, int(positions.max()) + 1, tokens.device, tokens.dtype)
+        # FIXED: Use pre-defined max_seq_len instead of positions.max() to avoid XLA sync
+        cos, sin = self.get_cos_sin(D, self.max_seq_len, tokens.device, tokens.dtype)
         y, x = tokens.chunk(2, dim=-1)
         y = self.apply_rope1d(y, positions[:, :, 0], cos, sin)
         x = self.apply_rope1d(x, positions[:, :, 1], cos, sin)
