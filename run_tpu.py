@@ -1,5 +1,6 @@
 import torch
 import torch_xla.core.xla_model as xm
+import torch_xla
 import argparse
 import numpy as np
 from PIL import Image
@@ -18,7 +19,7 @@ def main():
     args = parse_args()
     
     # 1. Init TPU
-    device = xm.xla_device()
+    device = torch_xla.device()
     print(f"Using device: {device}")
 
     # 2. Load Model

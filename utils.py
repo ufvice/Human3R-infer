@@ -46,12 +46,20 @@ def strip_prefix_if_present(state_dict, prefix):
     return stripped_state_dict
 
 def load_human3r_weights(model, path):
-    ckpt = torch.load(path, map_location='cpu')
+    print(f"Loading weights from {path}...")
+    # 修改点：添加 weights_only=False 以允许加载包含 OmegaConf/Hydra 配置的旧版 checkpoint
+    try:
+        ckpt = torch.load(path, map_location='cpu', weights_only=False)
+    except Exception as e:
+        print(f"Load failed with weights_only=False. Retrying with default...")
+        ckpt = torch.load(path, map_location='cpu')
+
     state_dict = ckpt['model'] if 'model' in ckpt else ckpt
     state_dict = strip_prefix_if_present(state_dict, "module.")
-    # Handle specific layer naming mismatches manually here if needed
-    model.load_state_dict(state_dict, strict=False)
-    print("Weights loaded.")
+    
+    # 加载权重，允许部分不匹配（strict=False）
+    keys = model.load_state_dict(state_dict, strict=False)
+    print(f"Weights loaded. Missing keys: {len(keys.missing_keys)}, Unexpected keys: {len(keys.unexpected_keys)}")
 
 # Add missing functions referenced in model.py imports
 def nms(x): return x
