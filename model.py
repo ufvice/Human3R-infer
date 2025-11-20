@@ -196,15 +196,16 @@ class ARCroco3DStereo(nn.Module):
                 
             # 5. Head Prediction
             # Extract tokens for DPT head
+            # The DPT head expects:
+            # - Index 0: Raw Encoder output (1024 dim, no pose token)
+            # - Index 1-3: Decoder outputs (768 dim, need to remove pose token)
             L = len(all_layers)
             head_input = [
-                all_layers[0], 
-                all_layers[L//2],
-                all_layers[L*3//4], 
-                all_layers[-1]
+                feat,  # Raw encoder output (1024 dim, no pose token to remove)
+                all_layers[L//2][:, 1:],  # Middle decoder layer (768 dim, remove pose token)
+                all_layers[L*3//4][:, 1:],  # Deep decoder layer (768 dim, remove pose token)
+                all_layers[-1][:, 1:]  # Final decoder layer (768 dim, remove pose token)
             ]
-            # Fix shapes (remove pose token)
-            head_input = [h[:, 1:] for h in head_input]
             
             # Run Head
             # 修改点：传入当前图像的实际尺寸 (current_H, current_W)
