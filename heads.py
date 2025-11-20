@@ -130,12 +130,12 @@ class DPTPts3dPoseSMPL(nn.Module):
         ed, dd = net.enc_embed_dim, net.dec_embed_dim
         
         # DPT Heads
-        self.dpt_self = DPTOutputAdapter_fix(num_channels=pts_channels, dim_tokens_enc=[ed, dd, dd, dd])
-        self.dpt_cross = DPTOutputAdapter_fix(num_channels=pts_channels, dim_tokens_enc=[ed, dd, dd, dd])
+        self.dpt_self = DPTOutputAdapter_fix(num_channels=pts_channels, dim_tokens_enc=[ed, dd, dd, dd], last_dim=128)
+        self.dpt_cross = DPTOutputAdapter_fix(num_channels=pts_channels, dim_tokens_enc=[ed, dd, dd, dd], last_dim=128)
         self.final_transform = nn.ModuleList([ConditionModulationBlock(dd, net.dec_num_heads, rope=net.rope) for _ in range(2)])
 
         if has_rgb:
-            self.dpt_rgb = DPTOutputAdapter_fix(num_channels=3, dim_tokens_enc=[ed, dd, dd, dd])
+            self.dpt_rgb = DPTOutputAdapter_fix(num_channels=3, dim_tokens_enc=[ed, dd, dd, dd], last_dim=128)
         if has_pose:
             self.pose_head = PoseDecoder(hidden_size=dd)
         
@@ -146,13 +146,13 @@ class DPTPts3dPoseSMPL(nn.Module):
         self.mlp_fuse = SMPLDecoder(hidden_size=ed+backbone_dim, target_dim=dd, num_layers=2)
         
         self.deccam = SMPLDecoder(hidden_size=dd, target_dim=3, num_layers=2)
-        # npose = 6d * (23 joints + 1 global) = 144 roughly
-        self.decpose = SMPLDecoder(hidden_size=dd+backbone_dim, target_dim=144, num_layers=2) # 6d rot
+        # npose = 6d * 53 joints (SMPL-X) = 318
+        self.decpose = SMPLDecoder(hidden_size=dd+backbone_dim, target_dim=318, num_layers=2) # 6d rot
         self.decshape = SMPLDecoder(hidden_size=dd+backbone_dim, target_dim=10, num_layers=2)
         self.decexpression = SMPLDecoder(hidden_size=dd+backbone_dim, target_dim=10, num_layers=2)
         
         # Init buffers (will be loaded from ckpt)
-        self.register_buffer('init_body_pose', torch.zeros(1, 144))
+        self.register_buffer('init_body_pose', torch.zeros(1, 318))
         self.register_buffer('init_betas', torch.zeros(1, 10))
         self.register_buffer('init_cam', torch.zeros(1, 3))
         self.register_buffer('init_expression', torch.zeros(1, 10))

@@ -86,7 +86,7 @@ class ARCroco3DStereo(nn.Module):
         self.dec_norm = nn.LayerNorm(dec_embed_dim)
         
         # State Encoder/Decoder
-        self.state_size = 324
+        self.state_size = 768
         self.register_tokens = nn.Embedding(self.state_size, enc_embed_dim)
         self.decoder_embed_state = nn.Linear(enc_embed_dim, dec_embed_dim)
         self.dec_blocks_state = nn.ModuleList([
