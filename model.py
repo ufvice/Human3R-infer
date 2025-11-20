@@ -165,16 +165,34 @@ class ARCroco3DStereo(nn.Module):
             # 4. Recurrent Step
             pose_feat = self.pose_retriever.inquire(feat.mean(1, keepdim=True), mem)
             
-            # Decoder Pass (State + Image + Pose)
-            f_state = state_feat
-            f_img = self.decoder_embed(feat)
-            f_img = torch.cat([pose_feat, f_img], dim=1) # Prepend pose
+            # --- Fix: Create position encoding for pose token and concatenate ---
+            # Pose token's position encoding is set to -1 (following original code logic)
+            # pos shape: [B, N, 2]
+            pose_pos = torch.full(
+                (batch_size, 1, 2), 
+                fill_value=-1, 
+                dtype=pos.dtype, 
+                device=device
+            )
             
-            all_layers = [f_img]
+            # Concatenate features: [Pose, Image] -> [B, 1+N, D]
+            f_img_input = self.decoder_embed(feat)
+            f_img_input = torch.cat([pose_feat, f_img_input], dim=1) 
+            
+            # Concatenate positions: [Pose_Pos, Image_Pos] -> [B, 1+N, 2]
+            pos_input = torch.cat([pose_pos, pos], dim=1)
+            # --- End of fix ---
+            
+            f_state = state_feat
+            
+            all_layers = [f_img_input]
+            
+            # Loop through DecoderBlocks
             for blk_state, blk_img in zip(self.dec_blocks_state, self.dec_blocks):
-                f_state, _, _ = blk_state(f_state, f_img, state_pos, pos)
-                f_img, _, _ = blk_img(f_img, f_state, pos, state_pos)
-                all_layers.append(f_img)
+                # Note: Pass the concatenated pos_input here
+                f_state, _, _ = blk_state(f_state, f_img_input, state_pos, pos_input)
+                f_img_input, _, _ = blk_img(f_img_input, f_state, pos_input, state_pos)
+                all_layers.append(f_img_input)
                 
             # 5. Head Prediction
             # Extract tokens for DPT head
