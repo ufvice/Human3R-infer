@@ -47,12 +47,8 @@ def strip_prefix_if_present(state_dict, prefix):
 
 def load_human3r_weights(model, path):
     print(f"Loading weights from {path}...")
-    # 修改点：添加 weights_only=False 以允许加载包含 OmegaConf/Hydra 配置的旧版 checkpoint
-    try:
-        ckpt = torch.load(path, map_location='cpu', weights_only=False)
-    except Exception as e:
-        print(f"Load failed with weights_only=False. Retrying with default...")
-        ckpt = torch.load(path, map_location='cpu')
+    
+    ckpt = torch.load(path, map_location='cpu', weights_only=False)
 
     state_dict = ckpt['model'] if 'model' in ckpt else ckpt
     state_dict = strip_prefix_if_present(state_dict, "module.")
