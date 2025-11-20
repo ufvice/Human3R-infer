@@ -11,8 +11,8 @@ def visualize_result(pt_path):
     res = results[0]
     
     # 1. 获取 3D 点云 [H, W, 3]
-    pts3d = res['pts3d'].float().numpy()
-    # 2. 获取 置信度 [H, W, 1]
+    pts3d = res['pts3d'].float().numpy().squeeze()
+    # 2. 获取 置信度 [H, W]
     conf = res['conf'].float().numpy().squeeze()
     
     # 提取深度 (Z轴)
